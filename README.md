@@ -1,11 +1,12 @@
 # torrent
 
 #### 介绍
-python3 实现torrent下载
+
+python3 实现 torrent 下载
 
 #### 软件架构
-软件架构说明
 
+软件架构说明
 
 #### 安装教程
 
@@ -19,6 +20,10 @@ python3 实现torrent下载
 2.  xxxx
 3.  xxxx
 
+#### 参考
+
+- [go-torrent](https://github.com/archeryue/go-torrent)
+
 #### 参与贡献
 
 1.  Fork 本仓库
@@ -26,10 +31,9 @@ python3 实现torrent下载
 3.  提交代码
 4.  新建 Pull Request
 
-
 #### 特技
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
+1.  使用 Readme_XXX.md 来支持不同的语言，例如 Readme_en.md, Readme_zh.md
 2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
 3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
 4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
