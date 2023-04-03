@@ -1,47 +1,54 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-import re, json
+import re, json, hashlib
 from json import JSONEncoder
 
 class BObject(object):
-    def __init__(self, type=None, value=None, length=0):
+    def __init__(self, type=None, value=None, start=0, length=0):
         self.type = type
         self.value = value
+        self.start = start
         self.length = length
 
     def __repr__(self):
         return str(self.single_to_dict())
 
     def toJson(self):
-            return json.dumps(self, default=lambda o: o.__dict__)
+        return json.dumps(self, default=lambda o: o.__dict__)
 
     def single_to_dict(self):
-        return {'type': self.type, 'value': self.value}
-        # return {'type': self.type, 'value': self.value, 'length': self.length}
+        # return {'type': self.type, 'value': self.value}
+        return {'type': self.type, 'start': self.start, 'length': self.length, 'value': self.value}
 
 class BObjectEncoder(JSONEncoder):
         def default(self, o):
             return o.__dict__
 
 class TorrentFile(dict):
-    def __init__(self):
-        self.announce = None
-        self.infosha = None
-        self.filename = None
-        self.filelen = None
-        self.piecelen = None
-        self.piecesha = None
+    def __init__(self, path):
+        self.parseFile(path)
 
+    def single_to_dict(self):
+        return {'announce': self.announce, 'infosha': self.infosha, 'filename': self.filename, 'filelen': self.filelen, 'piecelen': self.piecelen, 'piecesha': self.piecesha}
+    
     def parseFile(self, path):
+        SHALEN = 20
         bobject = test(path)
-        self.announce = bobject.value.get(b'announce', b'').decode('utf-8')
+        self.announce = bobject.value.get(b'announce', b'').value.decode('utf-8')
         info = bobject.value.get(b'info', {})
-        self.filename = info.get(b'name', b'').decode('utf-8')
-        self.filelen = info.get(b'length', 0)
-        self.piecelen = info.get(b'piece length', 0)
-        # self.infosha = bobject.value.get('announce', None)
-        self.piecesha = info.get(b'pieces', None)
+        self.filename = info.value.get(b'name', b'').value.decode('utf-8')
+        self.filelen = info.value.get(b'length', 0).value
+        self.piecelen = info.value.get(b'piece length', 0).value
+        sha1 = hashlib.sha1()
+        sha1.update(get_bytes(path, info.start, info.length))
+        self.infosha = sha1.digest()
+        bys = info.value.get(b'pieces').value
+        cnt = len(bys) / SHALEN
+        hashes = []
+        for index in range(int(cnt)):
+            hashes.append(bys[index*SHALEN:(index + 1)*SHALEN])
+        self.piecesha = hashes
 
 def read_decimal(src):
     sign = 1
@@ -79,8 +86,15 @@ def decode_string(src):
     # val = src.read(num).decode('utf-8', errors='ignore')
     return val
 
+def get_bytes(path, start, length):
+    with open(path, 'rb') as src:
+        src.seek(start, 0)
+        return src.read(length)
+
+
 def parse(src):
     result = BObject()
+    result.start = src.tell()
     b = src.read(1).decode('utf-8')
     offset = src.tell()
     if b == 'l':
@@ -134,6 +148,9 @@ def test(path):
 
 if __name__ == '__main__':
     path = 'testfile/debian-iso.torrent'
-    bobject = test(path)
-    print(bobject.single_to_dict())
+    # bobject = test(path)
+    # print(bobject.single_to_dict())
+    # print(get_bytes(path, 11, 44))
+    torrentFile = TorrentFile(path)
+    print(torrentFile.single_to_dict())
     # print(BObjectEncoder().encode(bobject))
