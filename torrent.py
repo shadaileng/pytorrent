@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-import re, json, hashlib, random, urllib, ssl
+import re, json, hashlib, random
 from json import JSONEncoder
 from urllib import request
 
@@ -35,24 +35,30 @@ class TorrentFile(dict):
     
     def parseFile(self, path):
         SHALEN = 20
-        result = test(path).value
+        with open(path, 'rb') as src:
+            result = parse(src).value
+        if result is None: return
         info = result.get(b'info')
         sha1 = hashlib.sha1()
         sha1.update(get_bytes(path, info.start, info.length))
-        print(request.quote(get_bytes(path, info.start, info.length)))
+        print('-'*20)
+        print(request.quote(sha1.digest()))
+        print('-'*20)
         bys = info.value.get(b'pieces').value
         cnt = len(bys) / SHALEN
         hashes = []
         for index in range(int(cnt)):
             hashes.append(bys[index*SHALEN:(index + 1)*SHALEN])
-        self.piecesha = hashes
+        self.piecesha = hashes 
 
         self.announce = result.get(b'announce').value.decode('utf-8')
         if info:
             self.filename = info.value.get(b'name').value.decode('utf-8')
             self.filelen = info.value.get(b'length', 0).value
             self.piecelen = info.value.get(b'piece length', 0).value
-        self.infosha = sha1.hexdigest()
+        # self.infosha = sha1.hexdigest()
+        # self.infosha = request.quote(sha1.digest())
+        self.infosha = sha1.digest()
 
     def makeurl(self, path= None):
         if path is not None:
@@ -60,9 +66,9 @@ class TorrentFile(dict):
         PeerPort = 6666
         peerId = "".join(list(map(lambda x: chr([random.randint(ord("a"), ord("z")), random.randint(ord("0"), ord("9"))][random.randint(0, 1)]), range(20))))
         url = self.announce
-        print(request.quote('解码'))
         params = {
             "info_hash":  request.quote(self.infosha),
+            # "info_hash":  self.infosha,
             "peer_id":    peerId,
             "port":       PeerPort,
             "uploaded":   "0",
@@ -71,6 +77,101 @@ class TorrentFile(dict):
             "left":       self.filelen,
         }
         return (url, params)
+
+class BtSrc(object):
+    def __init__(self, text=b'', index = 0) -> None:
+        self.text = text
+        self.index = index
+    def peek(self):
+        return self.text[self.index]
+    def get(self, length=1):
+        result = self.text[self.index : self.index + length]
+        self.index += length
+        return result
+    def back(self, length=1):
+        self.index -= length
+    
+def unmarshal_string(src=BtSrc()):
+    val = None
+    num, dec_len = unmarshal_decimal(src)
+    # print(f'num: {num}, dec_len: {dec_len}')
+    if dec_len == 0: return val
+    flag = src.get()
+    if flag != b':': 
+        return val
+    val = src.get(num)
+    # val = src.read(num).decode('utf-8')
+    # val = src.read(num).decode('gbk')
+    # val = src.read(num).decode('utf-8', errors='ignore')
+    return val
+
+def unmarshal_decimal(src=BtSrc()):
+    sign = 1
+    dec_len = 0
+    val = 0
+    flag = src.get()
+    dec_len += 1
+    if flag == b'-':
+        sign = -1
+        dec_len += 1
+        # 第一位数字
+        flag = src.get()
+    while True:
+        # print(f'flag: {flag}')
+        if flag < b'0' or flag > b'9':
+            src.back()
+            dec_len -= 1
+            break
+        val = val * 10 + int(flag.decode('utf-8'))
+        flag = src.get()
+        dec_len += 1
+    return val * sign, dec_len
+
+def unmarshal(src=BtSrc()):
+    result = BObject()
+    b = src.get()
+    offset = src.index
+    if b == b'l':
+        list_ = []
+        while True:
+            flag = src.get()
+            if b'e' == flag: break
+            src.back()
+            list_.append(unmarshal(src))
+        result.type = 'list'
+        result.value = list_
+        result.length = src.index - offset + 1
+    if b == b'd':
+        dictionary = {}
+        i = 0
+        while True:
+            flag = src.get(1)
+            if b'e' == flag: break
+            src.back()
+            key = unmarshal_string(src)
+            # print(f'key: {key}')
+            dictionary[key] = unmarshal(src)
+            # break
+            i += 1
+        result.type = 'dict'
+        result.value = dictionary
+        result.length = src.index - offset + 1
+    if b == b'i':
+        num, dec_len = unmarshal_decimal(src)
+        flag = src.get(1)
+        if b'e' != flag: 
+            result.value = 0
+        result.value = num
+        result.type = 'int'
+        result.length = src.index - offset + 1
+    if re.match('[0-9]', b.decode('utf-8', errors='ignore')):
+        src.back()
+        result.type = 'str'
+        result.value = unmarshal_string(src)
+        result.length = src.index - offset + 1
+    # print(result)
+    return result
+
 
 def read_decimal(src):
     sign = 1
@@ -208,56 +309,3 @@ def parse_(src):
         # if result['length'] > 100: result['value'] = b'111'
     # print(result)
     return result
-
-def test(path):
-    result = BObject()
-    with open(path, 'rb') as src:
-        # print(src.read().decode('utf-8', errors='ignore'))
-        result = parse(src)
-    return result
-
-def test_get(url, params):
-    # url = f'https://www.runoob.com/?s={request.quote("Python 教程") }'
-    # req = request.Request(url)
-    req = request.Request(url, urllib.parse.urlencode(params).encode('ascii'))
-    rsp = request.urlopen(req).read()
-    print(rsp)
-
-
-async def download_task(url, params, resultObj={}, headers={}):
-    import aiohttp, logging
-    from aiohttp import TCPConnector
-    connector = TCPConnector(ssl=False)
-    timeout = aiohttp.ClientTimeout(total=60)
-    async with aiohttp.ClientSession(connector=connector, timeout=timeout, trust_env=True) as session:
-        try:
-            logging.info(f"get: {url}, {params}")
-            async with session.get(url, params=params, headers=headers) as resp:
-                if resp.status in (206, 200):
-                    result = await resp.json()
-                    print(result)
-        except BaseException as e:
-            logging.error(e)
-
-
-def tets_get_aiohttp(url, params):
-    import asyncio
-    asyncio.run(download_task(url, params))
-
-if __name__ == '__main__':
-    path = 'testfile/debian-iso.torrent'
-    path = 'testfile/Sintel.torrent'
-    path = 'testfile/ubuntu-22.10-desktop-amd64.iso.torrent'
-
-    # bobject = test(path)
-    # print(bobject.single_to_dict())
-    # print(BObjectEncoder().encode(bobject))
-    # print(get_bytes(path, 11, 44))
-
-    torrentFile = TorrentFile(path)
-    # print(torrentFile.single_to_dict())
-    url , params = torrentFile.makeurl()
-    print(url, params)
-    # test_get(url, params)
-    tets_get_aiohttp(url, params)
-
